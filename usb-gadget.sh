@@ -107,6 +107,7 @@ cleanup_old_config() {
             print_info "删除符号链接..."
             rm -f /sys/kernel/config/usb_gadget/pi4/configs/c.1/hid.usb0 2>/dev/null || true
             rm -f /sys/kernel/config/usb_gadget/pi4/configs/c.1/hid.usb1 2>/dev/null || true
+            rm -f /sys/kernel/config/usb_gadget/pi4/configs/c.1/hid.usb2 2>/dev/null || true
             sleep 1
         fi
         
@@ -120,6 +121,10 @@ cleanup_old_config() {
         if [ -d "/sys/kernel/config/usb_gadget/pi4/functions/hid.usb1" ]; then
             rm -f /sys/kernel/config/usb_gadget/pi4/functions/hid.usb1/* 2>/dev/null || true
             rmdir /sys/kernel/config/usb_gadget/pi4/functions/hid.usb1 2>/dev/null || true
+        fi
+        if [ -d "/sys/kernel/config/usb_gadget/pi4/functions/hid.usb2" ]; then
+            rm -f /sys/kernel/config/usb_gadget/pi4/functions/hid.usb2/* 2>/dev/null || true
+            rmdir /sys/kernel/config/usb_gadget/pi4/functions/hid.usb2 2>/dev/null || true
         fi
         sleep 1
         
@@ -253,6 +258,21 @@ create_gadget() {
         exit 1
     }
     print_success "鼠标功能配置完成"
+
+    # 绝对定位指针功能（用于“移动到指定坐标”）
+    print_info "配置绝对定位指针功能..."
+    mkdir -p functions/hid.usb2
+    echo 2 > functions/hid.usb2/protocol
+    echo 1 > functions/hid.usb2/subclass
+    echo 5 > functions/hid.usb2/report_length
+    # USB HID 绝对鼠标报告描述符：1 字节按钮 + 2 字节 X + 2 字节 Y，逻辑范围 0-32767
+    echo -ne \\x05\\x01\\x09\\x02\\xa1\\x01\\x09\\x01\\xa1\\x00\\x05\\x09\\x19\\x01\\x29\\x05\\x15\\x00\\x25\\x01\\x95\\x05\\x75\\x01\\x81\\x02\\x95\\x01\\x75\\x03\\x81\\x03\\x05\\x01\\x09\\x30\\x09\\x31\\x15\\x00\\x26\\xff\\x7f\\x75\\x10\\x95\\x02\\x81\\x02\\xc0\\xc0 > functions/hid.usb2/report_desc
+    rm -f configs/c.1/hid.usb2 2>/dev/null || true
+    ln -sf functions/hid.usb2 configs/c.1/ || {
+        print_error "无法创建绝对指针功能符号链接"
+        exit 1
+    }
+    print_success "绝对定位指针功能配置完成"
 }
 
 # 启用USB Gadget
@@ -281,10 +301,14 @@ verify_devices() {
     sleep 2
     
     # 检查设备文件
-    if [ -e "/dev/hidg0" ] && [ -e "/dev/hidg1" ]; then
+    if [ -e "/dev/hidg0" ] && [ -e "/dev/hidg1" ] && [ -e "/dev/hidg2" ]; then
         print_success "设备文件已创建:"
         echo "  /dev/hidg0 (键盘)"
-        echo "  /dev/hidg1 (鼠标)"
+        echo "  /dev/hidg1 (鼠标，相对移动)"
+        echo "  /dev/hidg2 (绝对定位指针)"
+        return 0
+    elif [ -e "/dev/hidg0" ] && [ -e "/dev/hidg1" ]; then
+        print_warning "找到 /dev/hidg0、/dev/hidg1，未找到 /dev/hidg2（绝对指针）"
         return 0
     elif [ -e "/dev/hidg0" ]; then
         print_warning "只找到 /dev/hidg0，可能只有一个HID设备"
@@ -322,6 +346,7 @@ main() {
     echo "  find /dev -name 'hidg*'"
     echo "  [ -e /dev/hidg0 ] && echo '键盘设备存在'"
     echo "  [ -e /dev/hidg1 ] && echo '鼠标设备存在'"
+    echo "  [ -e /dev/hidg2 ] && echo '绝对指针设备存在'"
     echo ""
     print_info "下一步: 连接树莓派到目标电脑的USB口（使用数据线）"
 }

@@ -132,6 +132,8 @@ sudo chmod +x /usr/local/bin/usb-gadget.sh
 sudo /usr/local/bin/usb-gadget.sh
 ```
 
+**说明**：上述手动脚本只创建键盘和相对鼠标（hidg0、hidg1）。若需**绝对移动**（将光标移动到指定坐标），请使用项目中的完整 `usb-gadget.sh`，它会额外创建绝对指针设备 `/dev/hidg2`。
+
 ### 4. 验证配置
 
 **方式1：使用检查脚本（推荐）**
@@ -149,6 +151,7 @@ find /dev -name "hidg*"
 # 或
 [ -e /dev/hidg0 ] && echo "✓ 键盘设备存在" || echo "✗ 未找到键盘设备"
 [ -e /dev/hidg1 ] && echo "✓ 鼠标设备存在" || echo "✗ 未找到鼠标设备"
+[ -e /dev/hidg2 ] && echo "✓ 绝对指针设备存在（可做绝对移动）" || echo "（无 hidg2 时仅支持相对移动）"
 
 # 检查USB Gadget状态
 cat /sys/kernel/config/usb_gadget/pi4/UDC
@@ -158,7 +161,7 @@ cat /sys/kernel/config/usb_gadget/pi4/UDC
 dmesg | tail -20 | grep -i "usb\|gadget"
 ```
 
-应该看到 `/dev/hidg0` 和 `/dev/hidg1`。
+应至少看到 `/dev/hidg0` 和 `/dev/hidg1`；若使用项目中的完整 `usb-gadget.sh`，还会看到 `/dev/hidg2`（绝对指针）。
 
 ## 二、连接设备到电脑
 
@@ -291,11 +294,31 @@ curl -X POST http://192.168.1.100:5000/api/test \
   -d '{"radius": 100, "duration": 2.0}'
 ```
 
-**移动鼠标**：
+**移动鼠标**（默认相对移动，x/y 为移动量）：
 ```bash
 curl -X POST http://192.168.1.100:5000/api/mouse/move \
   -H "Content-Type: application/json" \
   -d '{"x": 100, "y": 200}'
+```
+
+**绝对移动**（将光标移动到指定坐标，需运行本项目的 `usb-gadget.sh` 以启用 `/dev/hidg2`）：
+- 按像素坐标（需传入目标屏幕分辨率）：
+```bash
+curl -X POST http://192.168.1.100:5000/api/mouse/move \
+  -H "Content-Type: application/json" \
+  -d '{"x": 960, "y": 540, "absolute": true, "screen_width": 1920, "screen_height": 1080}'
+```
+- 按逻辑坐标 0–32767（客户端自行归一化）：
+```bash
+curl -X POST http://192.168.1.100:5000/api/mouse/move \
+  -H "Content-Type: application/json" \
+  -d '{"x": 16384, "y": 16384, "absolute": true}'
+```
+
+**鼠标移动到屏幕中心**（相对移动经验值，适合常见 1080p）：
+```bash
+curl -X POST http://192.168.1.100:5000/api/mouse/move -H "Content-Type: application/json" -d '{"x": 500, "y": 500}' && \
+curl -X POST http://192.168.1.100:5000/api/mouse/move -H "Content-Type: application/json" -d '{"x": -250, "y": -250}'
 ```
 
 **点击鼠标**：
@@ -328,14 +351,15 @@ curl -X POST http://192.168.1.100:5000/api/keyboard/press \
 
 示例：`duration=2.0, steps=50` → 2 秒画完一圈，每步约 0.04 秒。
 
-**屏幕尺寸**：USB HID 鼠标无法获取目标电脑的屏幕尺寸和当前坐标，只能做相对移动。  
-“居中”是经验值（先向右下移 500,500，再向左上移 250,250），适合常见 1080p。其他分辨率可在代码里改 `DEFAULT_CENTER_OFFSET` / `DEFAULT_CENTER_BACK`，或通过 API 传 `center_move`、`center_back`（若后续接口支持）。
+**屏幕尺寸**：相对移动时 USB HID 无法获取目标电脑的屏幕尺寸和当前坐标。  
+“居中”是经验值（先向右下移 500,500，再向左上移 250,250），适合常见 1080p。其他分辨率可在代码里改 `DEFAULT_CENTER_OFFSET` / `DEFAULT_CENTER_BACK`，或通过 API 传 `center_move`、`center_back`（若后续接口支持）。  
+**绝对移动**时需运行本项目的 `usb-gadget.sh`（会创建 `/dev/hidg2`），可将光标移动到指定坐标；可传 `screen_width`、`screen_height` 用像素坐标，或直接传 0–32767 的逻辑坐标。
 
 ### 完整API列表
 
 - `GET /health` - 健康检查
 - `GET/POST /api/test` - 测试画圆（支持 ?radius=100&duration=2&steps=50）
-- `POST /api/mouse/move` - 移动鼠标
+- `POST /api/mouse/move` - 移动鼠标（相对移动；`absolute: true` 时为绝对移动，需 /dev/hidg2）
 - `POST /api/mouse/click` - 点击鼠标
 - `POST /api/keyboard/type` - 输入文本
 - `POST /api/keyboard/press` - 按下按键

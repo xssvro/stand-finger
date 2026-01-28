@@ -100,13 +100,16 @@ def test_draw_circle():
 
 @app.route('/api/mouse/move', methods=['POST'])
 def move_mouse():
-    """移动鼠标到指定位置
+    """移动鼠标
     
     请求体:
     {
-        "x": 100,           # 目标X坐标
-        "y": 200,           # 目标Y坐标
-        "duration": 0.5     # 移动持续时间（秒），可选
+        "x": 100,            # X：相对模式为移动量，绝对模式为逻辑坐标 0-32767 或像素（配合 screen_width/height）
+        "y": 200,             # Y：同上
+        "duration": 0.5,      # 相对移动持续时间（秒），可选
+        "absolute": false,    # 若 true 则按绝对坐标移动（需 /dev/hidg2）
+        "screen_width": 1920, # 可选，与 screen_height 一起传入时，x/y 视为像素并自动归一化到 0-32767
+        "screen_height": 1080
     }
     """
     try:
@@ -117,20 +120,42 @@ def move_mouse():
                 'status': 'error',
                 'message': '缺少必要参数: x, y'
             }), 400
-        
+
         x = int(data['x'])
         y = int(data['y'])
         duration = data.get('duration', 0.1)
-        
-        colored_logger.info(f"移动鼠标到 ({x}, {y})，持续时间: {duration}秒", category="MOUSE")
-        mouse_controller.move_to(x, y, duration)
-        colored_logger.success(f"鼠标已移动到 ({x}, {y})", category="MOUSE")
-        
+        absolute = data.get('absolute', False)
+        screen_width = data.get('screen_width')
+        screen_height = data.get('screen_height')
+
+        if absolute and screen_width and screen_height and screen_width > 0 and screen_height > 0:
+            # 像素坐标转逻辑坐标 0-32767
+            x = int(x * 32767 / screen_width)
+            y = int(y * 32767 / screen_height)
+            x = max(0, min(32767, x))
+            y = max(0, min(32767, y))
+
+        colored_logger.info(
+            f"移动鼠标: ({data['x']}, {data['y']})"
+            + (" [绝对]" if absolute else f"，持续时间: {duration}秒"),
+            category="MOUSE"
+        )
+        mouse_controller.move_to(x, y, duration, absolute=absolute)
+        colored_logger.success("鼠标已移动", category="MOUSE")
+
         return jsonify({
             'status': 'success',
-            'message': f'鼠标已移动到 ({x}, {y})'
+            'message': '鼠标已移动',
+            'absolute': absolute
         })
-    
+    except RuntimeError as e:
+        if '绝对定位不可用' in str(e):
+            return jsonify({
+                'status': 'error',
+                'message': str(e),
+                'hint': '请重新运行 usb-gadget.sh 以启用绝对指针（/dev/hidg2）'
+            }), 400
+        raise
     except Exception as e:
         colored_logger.error(f"移动鼠标失败: {str(e)}", category="API")
         return jsonify({
