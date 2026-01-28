@@ -319,10 +319,22 @@ curl -X POST http://192.168.1.100:5000/api/keyboard/press \
   -d '{"key": "enter"}'
 ```
 
+### 画圆速度与参数说明
+
+**画圆速度**由 `duration` 和 `steps` 控制：
+- **duration**：画完整一圈的总时间（秒），默认 2.0。越大越慢。
+- **steps**：一圈分成多少步，默认 50。越大越平滑，每步间隔 = duration / steps。
+- **radius**：圆的半径（像素），默认 100。
+
+示例：`duration=2.0, steps=50` → 2 秒画完一圈，每步约 0.04 秒。
+
+**屏幕尺寸**：USB HID 鼠标无法获取目标电脑的屏幕尺寸和当前坐标，只能做相对移动。  
+“居中”是经验值（先向右下移 500,500，再向左上移 250,250），适合常见 1080p。其他分辨率可在代码里改 `DEFAULT_CENTER_OFFSET` / `DEFAULT_CENTER_BACK`，或通过 API 传 `center_move`、`center_back`（若后续接口支持）。
+
 ### 完整API列表
 
 - `GET /health` - 健康检查
-- `POST /api/test` - 测试画圆
+- `GET/POST /api/test` - 测试画圆（支持 ?radius=100&duration=2&steps=50）
 - `GET /api/mouse/position` - 获取鼠标位置
 - `POST /api/mouse/move` - 移动鼠标
 - `POST /api/mouse/click` - 点击鼠标

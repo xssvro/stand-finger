@@ -176,18 +176,33 @@ class MouseController:
         time.sleep(0.01)
         self._write_mouse_report(wheel=0)  # 停止滚动
     
-    def center(self):
-        """将鼠标移动到屏幕中心
+    # 默认“居中”相对移动量（像素），用于 center()
+    # USB HID 无法获取屏幕尺寸，这里是经验值，可通过 set_center_offset 修改
+    DEFAULT_CENTER_OFFSET = (500, 500)
+    DEFAULT_CENTER_BACK = (250, 250)
+
+    def set_center_offset(self, move_x: int = 500, move_y: int = 500, back_x: int = 250, back_y: int = 250):
+        """设置 center() 使用的相对移动量（根据目标屏幕尺寸调整）"""
+        self._center_move = (move_x, move_y)
+        self._center_back = (back_x, back_y)
+
+    def center(self, move_x: Optional[int] = None, move_y: Optional[int] = None,
+               back_x: Optional[int] = None, back_y: Optional[int] = None):
+        """将鼠标向“中心”方向做相对移动
         
-        注意：USB HID鼠标无法获取绝对位置，此函数会执行一个较大的相对移动
-        实际效果取决于目标电脑的屏幕尺寸和当前鼠标位置
+        USB HID 无法获取屏幕尺寸和当前坐标，只能做相对移动。
+        这里先向右下移动 (move_x, move_y)，再向左上移动 (back_x, back_y)。
+        默认值适合常见 1080p 屏幕，其他分辨率可传参或调用 set_center_offset。
         """
-        # 执行一个较大的相对移动（假设屏幕中心在当前位置的某个方向）
-        # 这里移动到一个假设的中心位置
-        # 实际使用时，可能需要根据目标屏幕尺寸调整
-        self.move_relative(500, 500)  # 向右下移动
+        default_move = getattr(self, '_center_move', self.DEFAULT_CENTER_OFFSET)
+        default_back = getattr(self, '_center_back', self.DEFAULT_CENTER_BACK)
+        mx = move_x if move_x is not None else default_move[0]
+        my = move_y if move_y is not None else default_move[1]
+        bx = back_x if back_x is not None else default_back[0]
+        by = back_y if back_y is not None else default_back[1]
+        self.move_relative(mx, my)
         time.sleep(0.1)
-        self.move_relative(-250, -250)  # 向左上移动，回到大致中心
+        self.move_relative(-bx, -by)
     
     def draw_circle(self, center_x: Optional[int] = None, 
                     center_y: Optional[int] = None, 

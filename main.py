@@ -39,24 +39,37 @@ def test_draw_circle():
     """测试服务：鼠标移动后画圆
     
     支持 GET 和 POST。
-    GET: 可用查询参数 ?radius=100&duration=2.0&steps=50
-    POST: 请求体 {"radius": 100, "duration": 2.0, "steps": 50}
+    GET: ?radius=100&duration=2.0&steps=50&center_move_x=500&center_move_y=500&center_back_x=250&center_back_y=250
+    POST: 请求体 {"radius": 100, "duration": 2.0, "steps": 50, "center_move": [500,500], "center_back": [250,250]}
     """
     try:
         if request.method == 'GET':
             radius = int(request.args.get('radius', 100))
             duration = float(request.args.get('duration', 2.0))
             steps = int(request.args.get('steps', 50))
+            center_move_x = request.args.get('center_move_x', type=int)
+            center_move_y = request.args.get('center_move_y', type=int)
+            center_back_x = request.args.get('center_back_x', type=int)
+            center_back_y = request.args.get('center_back_y', type=int)
         else:
             data = request.get_json() or {}
             radius = data.get('radius', 100)
             duration = data.get('duration', 2.0)
             steps = data.get('steps', 50)
+            center_move = data.get('center_move')
+            center_back = data.get('center_back')
+            center_move_x = center_move[0] if isinstance(center_move, (list, tuple)) and len(center_move) >= 2 else None
+            center_move_y = center_move[1] if isinstance(center_move, (list, tuple)) and len(center_move) >= 2 else None
+            center_back_x = center_back[0] if isinstance(center_back, (list, tuple)) and len(center_back) >= 2 else None
+            center_back_y = center_back[1] if isinstance(center_back, (list, tuple)) and len(center_back) >= 2 else None
         
-        colored_logger.info(f"执行测试：鼠标移动后画圆，半径={radius}, 持续时间={duration}秒", category="API")
+        colored_logger.info(f"执行测试：鼠标移动后画圆，半径={radius}, 持续时间={duration}秒, steps={steps}", category="API")
         
-        # 1. 执行一个相对移动（模拟居中操作）
-        mouse_controller.center()
+        # 1. 执行相对移动（模拟居中，可传参适配不同屏幕）
+        mouse_controller.center(
+            move_x=center_move_x, move_y=center_move_y,
+            back_x=center_back_x, back_y=center_back_y
+        )
         colored_logger.success("鼠标已执行相对移动", category="MOUSE")
         
         # 2. 画圆（以当前位置为圆心）
