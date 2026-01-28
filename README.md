@@ -335,7 +335,6 @@ curl -X POST http://192.168.1.100:5000/api/keyboard/press \
 
 - `GET /health` - 健康检查
 - `GET/POST /api/test` - 测试画圆（支持 ?radius=100&duration=2&steps=50）
-- `GET /api/mouse/position` - 获取鼠标位置
 - `POST /api/mouse/move` - 移动鼠标
 - `POST /api/mouse/click` - 点击鼠标
 - `POST /api/keyboard/type` - 输入文本

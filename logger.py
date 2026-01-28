@@ -1,8 +1,10 @@
 """
 彩色日志工具模块
-提供美观的、分类清晰的日志输出
+提供美观的、分类清晰的日志输出，并写入本地临时日志文件
 """
 import sys
+import os
+import tempfile
 from datetime import datetime
 from enum import Enum
 
@@ -74,14 +76,46 @@ class ColoredLogger:
         'DEFAULT': Fore.WHITE,
     }
     
-    def __init__(self, name: str = "HID"):
+    def __init__(self, name: str = "HID", log_dir: str = None):
         """初始化日志记录器
         
         Args:
             name: 日志记录器名称
+            log_dir: 日志文件目录，None 则使用系统临时目录
         """
         self.name = name
         self.enabled = True
+        # 日志文件：优先使用 log_dir，否则用系统临时目录
+        self._log_dir = log_dir or tempfile.gettempdir()
+        self._log_file = None
+        self._log_path = None
+        self._init_log_file()
+
+    def _init_log_file(self):
+        """初始化日志文件句柄"""
+        try:
+            os.makedirs(self._log_dir, exist_ok=True)
+            date_suffix = datetime.now().strftime("%Y%m%d")
+            self._log_path = os.path.join(self._log_dir, f"mk_shade_{date_suffix}.log")
+            self._log_file = open(self._log_path, "a", encoding="utf-8")
+        except Exception:
+            self._log_file = None
+            self._log_path = None
+
+    def _plain_message(self, level: LogLevel, category: str, message: str) -> str:
+        """无颜色的纯文本日志行（用于写文件）"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return f"[{timestamp}] [{level.value}] [{category}] {message}\n"
+
+    def _write_to_file(self, level: LogLevel, category: str, message: str):
+        """写入日志到本地文件"""
+        if self._log_file is None:
+            return
+        try:
+            self._log_file.write(self._plain_message(level, category, message))
+            self._log_file.flush()
+        except Exception:
+            pass
     
     def _format_message(self, level: LogLevel, category: str, message: str) -> str:
         """格式化日志消息
@@ -121,46 +155,70 @@ class ColoredLogger:
         """调试日志"""
         if self.enabled:
             print(self._format_message(LogLevel.DEBUG, category, message))
-    
+            self._write_to_file(LogLevel.DEBUG, category, message)
+
     def info(self, message: str, category: str = "SYSTEM"):
         """信息日志"""
         if self.enabled:
             print(self._format_message(LogLevel.INFO, category, message))
-    
+            self._write_to_file(LogLevel.INFO, category, message)
+
     def success(self, message: str, category: str = "SYSTEM"):
         """成功日志"""
         if self.enabled:
             print(self._format_message(LogLevel.SUCCESS, category, message))
-    
+            self._write_to_file(LogLevel.SUCCESS, category, message)
+
     def warning(self, message: str, category: str = "SYSTEM"):
         """警告日志"""
         if self.enabled:
             print(self._format_message(LogLevel.WARNING, category, message), file=sys.stderr)
-    
+            self._write_to_file(LogLevel.WARNING, category, message)
+
     def error(self, message: str, category: str = "SYSTEM"):
         """错误日志"""
         if self.enabled:
             print(self._format_message(LogLevel.ERROR, category, message), file=sys.stderr)
-    
+            self._write_to_file(LogLevel.ERROR, category, message)
+
     def critical(self, message: str, category: str = "SYSTEM"):
         """严重错误日志"""
         if self.enabled:
             print(self._format_message(LogLevel.CRITICAL, category, message), file=sys.stderr)
+            self._write_to_file(LogLevel.CRITICAL, category, message)
+
+    def get_log_path(self) -> str:
+        """返回当前日志文件路径"""
+        return self._log_path or ""
     
     def separator(self, char: str = "=", length: int = 60):
         """打印分隔线"""
-        if COLORAMA_AVAILABLE:
-            print(f"{Fore.WHITE}{Style.DIM}{char * length}{Style.RESET_ALL}")
-        else:
-            print(char * length)
-    
+        if self.enabled:
+            if COLORAMA_AVAILABLE:
+                print(f"{Fore.WHITE}{Style.DIM}{char * length}{Style.RESET_ALL}")
+            else:
+                print(char * length)
+            if self._log_file:
+                try:
+                    self._log_file.write(char * length + "\n")
+                    self._log_file.flush()
+                except Exception:
+                    pass
+
     def banner(self, title: str):
         """打印横幅"""
         self.separator()
-        if COLORAMA_AVAILABLE:
-            print(f"{Fore.CYAN}{Style.BRIGHT}{' ' * 15}{title}{Style.RESET_ALL}")
-        else:
-            print(f"{' ' * 15}{title}")
+        if self.enabled:
+            if COLORAMA_AVAILABLE:
+                print(f"{Fore.CYAN}{Style.BRIGHT}{' ' * 15}{title}{Style.RESET_ALL}")
+            else:
+                print(f"{' ' * 15}{title}")
+            if self._log_file:
+                try:
+                    self._log_file.write(f"  {title}\n")
+                    self._log_file.flush()
+                except Exception:
+                    pass
         self.separator()
 
 

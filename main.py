@@ -98,26 +98,6 @@ def test_draw_circle():
         }), 500
 
 
-@app.route('/api/mouse/position', methods=['GET'])
-def get_mouse_position():
-    """获取当前鼠标位置"""
-    try:
-        x, y = mouse_controller.get_position()
-        return jsonify({
-            'status': 'success',
-            'data': {
-                'x': x,
-                'y': y
-            }
-        })
-    except Exception as e:
-        colored_logger.error(f"获取鼠标位置失败: {str(e)}", category="API")
-        return jsonify({
-            'status': 'error',
-            'message': f'获取失败: {str(e)}'
-        }), 500
-
-
 @app.route('/api/mouse/move', methods=['POST'])
 def move_mouse():
     """移动鼠标到指定位置
@@ -272,12 +252,14 @@ if __name__ == '__main__':
     colored_logger.info("服务地址: http://0.0.0.0:5000", category="NETWORK")
     colored_logger.info("API接口列表:", category="API")
     colored_logger.info("  POST /api/test - 测试服务：鼠标移动后画圆", category="API")
-    colored_logger.info("  GET  /api/mouse/position - 获取鼠标位置", category="API")
     colored_logger.info("  POST /api/mouse/move - 移动鼠标", category="API")
     colored_logger.info("  POST /api/mouse/click - 点击鼠标", category="API")
     colored_logger.info("  POST /api/keyboard/type - 输入文本", category="API")
     colored_logger.info("  POST /api/keyboard/press - 按下按键", category="API")
+    log_path = colored_logger.get_log_path()
+    if log_path:
+        colored_logger.info(f"日志文件: {log_path}", category="SYSTEM")
     colored_logger.separator()
     colored_logger.success("服务已启动，等待请求...", category="SYSTEM")
-    
+
     app.run(host='0.0.0.0', port=5000, debug=False)

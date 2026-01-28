@@ -4,7 +4,7 @@
 """
 import struct
 import time
-from typing import Tuple, Optional
+from typing import Optional
 import os
 from logger import logger
 
@@ -243,15 +243,7 @@ class MouseController:
             
             self.move_relative(dx, dy)
             time.sleep(step_duration)
-    
-    def get_position(self) -> Tuple[int, int]:
-        """获取当前鼠标位置
-        
-        注意：USB HID鼠标无法获取绝对位置，此函数返回(0, 0)作为占位符
-        """
-        # USB HID鼠标协议不支持读取位置
-        return (0, 0)
-    
+
     def __del__(self):
         """清理资源"""
         if self.device_file:
