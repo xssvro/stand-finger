@@ -3,7 +3,7 @@
 # 将树莓派配置为USB HID键盘+鼠标设备
 # 使用方法: sudo ./usb-gadget.sh
 
-set -e  # 遇到错误立即退出（某些地方需要忽略错误）
+# 注意：不使用 set -e，因为某些清理操作可能会失败，需要手动处理
 
 # 颜色定义
 RED='\033[0;31m'
@@ -87,14 +87,85 @@ check_modules() {
 cleanup_old_config() {
     if [ -d "/sys/kernel/config/usb_gadget/pi4" ]; then
         print_warning "检测到已存在的配置"
-        if [ -f "/sys/kernel/config/usb_gadget/pi4/UDC" ] && [ -s "/sys/kernel/config/usb_gadget/pi4/UDC" ]; then
-            print_info "正在禁用现有USB Gadget..."
-            echo "" > /sys/kernel/config/usb_gadget/pi4/UDC 2>/dev/null || true
+        
+        # 先禁用UDC（如果已启用）- 这是关键步骤
+        if [ -f "/sys/kernel/config/usb_gadget/pi4/UDC" ]; then
+            UDC_CONTENT=$(cat /sys/kernel/config/usb_gadget/pi4/UDC 2>/dev/null || echo "")
+            if [ -n "$UDC_CONTENT" ] && [ "$UDC_CONTENT" != "" ]; then
+                print_info "正在禁用现有USB Gadget (UDC: $UDC_CONTENT)..."
+                echo "" > /sys/kernel/config/usb_gadget/pi4/UDC 2>/dev/null || {
+                    print_error "无法禁用UDC，可能需要断开USB连接"
+                    return 1
+                }
+                print_info "等待资源释放..."
+                sleep 3  # 增加等待时间
+            fi
+        fi
+        
+        # 按正确顺序删除：先删除符号链接
+        if [ -d "/sys/kernel/config/usb_gadget/pi4/configs/c.1" ]; then
+            print_info "删除符号链接..."
+            rm -f /sys/kernel/config/usb_gadget/pi4/configs/c.1/hid.usb0 2>/dev/null || true
+            rm -f /sys/kernel/config/usb_gadget/pi4/configs/c.1/hid.usb1 2>/dev/null || true
             sleep 1
         fi
-        print_info "清理旧配置..."
-        rm -rf /sys/kernel/config/usb_gadget/pi4
+        
+        # 删除功能目录（必须先删除符号链接）
+        print_info "删除功能目录..."
+        if [ -d "/sys/kernel/config/usb_gadget/pi4/functions/hid.usb0" ]; then
+            # 尝试删除功能目录下的文件
+            rm -f /sys/kernel/config/usb_gadget/pi4/functions/hid.usb0/* 2>/dev/null || true
+            rmdir /sys/kernel/config/usb_gadget/pi4/functions/hid.usb0 2>/dev/null || true
+        fi
+        if [ -d "/sys/kernel/config/usb_gadget/pi4/functions/hid.usb1" ]; then
+            rm -f /sys/kernel/config/usb_gadget/pi4/functions/hid.usb1/* 2>/dev/null || true
+            rmdir /sys/kernel/config/usb_gadget/pi4/functions/hid.usb1 2>/dev/null || true
+        fi
+        sleep 1
+        
+        # 删除配置目录
+        if [ -d "/sys/kernel/config/usb_gadget/pi4/configs" ]; then
+            print_info "删除配置目录..."
+            # 先删除配置下的所有内容
+            find /sys/kernel/config/usb_gadget/pi4/configs -type l -delete 2>/dev/null || true
+            find /sys/kernel/config/usb_gadget/pi4/configs -type d -empty -delete 2>/dev/null || true
+            rmdir /sys/kernel/config/usb_gadget/pi4/configs/c.1/strings/0x409 2>/dev/null || true
+            rmdir /sys/kernel/config/usb_gadget/pi4/configs/c.1/strings 2>/dev/null || true
+            rmdir /sys/kernel/config/usb_gadget/pi4/configs/c.1 2>/dev/null || true
+            rmdir /sys/kernel/config/usb_gadget/pi4/configs 2>/dev/null || true
+            sleep 1
+        fi
+        
+        # 删除其他目录
+        print_info "删除其他配置..."
+        rmdir /sys/kernel/config/usb_gadget/pi4/strings/0x409 2>/dev/null || true
+        rmdir /sys/kernel/config/usb_gadget/pi4/strings 2>/dev/null || true
+        rmdir /sys/kernel/config/usb_gadget/pi4/os_desc 2>/dev/null || true
+        rmdir /sys/kernel/config/usb_gadget/pi4/webusb 2>/dev/null || true
+        rmdir /sys/kernel/config/usb_gadget/pi4/functions 2>/dev/null || true
+        sleep 1
+        
+        # 最后删除主目录
+        print_info "删除主配置目录..."
+        rmdir /sys/kernel/config/usb_gadget/pi4 2>/dev/null && {
+            print_success "旧配置已清理"
+            return 0
+        } || {
+            print_warning "无法完全清理旧配置，可能仍有USB连接"
+            print_info "建议操作："
+            echo "  1. 断开树莓派与电脑的USB连接"
+            echo "  2. 等待3-5秒"
+            echo "  3. 重新运行此脚本"
+            echo ""
+            read -p "是否继续尝试创建新配置？(y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                return 1
+            fi
+            return 1  # 返回1表示清理不完整
+        }
     fi
+    return 0
 }
 
 # 创建USB Gadget配置
@@ -106,12 +177,25 @@ create_gadget() {
         exit 1
     }
     
+    # 清理旧配置
     cleanup_old_config
+    CLEANUP_RESULT=$?
+    
+    # 如果清理失败，使用新的目录名
+    GADGET_NAME="pi4"
+    if [ $CLEANUP_RESULT -ne 0 ] && [ -d "pi4" ]; then
+        print_warning "使用备用目录名 pi4_hid"
+        GADGET_NAME="pi4_hid"
+        if [ -d "$GADGET_NAME" ]; then
+            print_error "备用目录也已存在，请手动清理或重启后重试"
+            exit 1
+        fi
+    fi
     
     # 创建gadget目录
-    mkdir -p pi4
-    cd pi4 || {
-        print_error "无法创建或进入 pi4 目录"
+    mkdir -p "$GADGET_NAME"
+    cd "$GADGET_NAME" || {
+        print_error "无法创建或进入 $GADGET_NAME 目录"
         exit 1
     }
     
