@@ -34,25 +34,24 @@ def health():
     })
 
 
-@app.route('/api/test', methods=['POST'])
+@app.route('/api/test', methods=['GET', 'POST'])
 def test_draw_circle():
     """测试服务：鼠标移动后画圆
     
-    注意：USB HID鼠标只能做相对移动，无法获取绝对位置
-    此服务会先执行一个相对移动，然后以当前位置为圆心画圆
-    
-    请求体（可选）:
-    {
-        "radius": 100,      # 圆的半径，默认100
-        "duration": 2.0,    # 画圆时间（秒），默认2.0
-        "steps": 50         # 画圆步数，默认50
-    }
+    支持 GET 和 POST。
+    GET: 可用查询参数 ?radius=100&duration=2.0&steps=50
+    POST: 请求体 {"radius": 100, "duration": 2.0, "steps": 50}
     """
     try:
-        data = request.get_json() or {}
-        radius = data.get('radius', 100)
-        duration = data.get('duration', 2.0)
-        steps = data.get('steps', 50)
+        if request.method == 'GET':
+            radius = int(request.args.get('radius', 100))
+            duration = float(request.args.get('duration', 2.0))
+            steps = int(request.args.get('steps', 50))
+        else:
+            data = request.get_json() or {}
+            radius = data.get('radius', 100)
+            duration = data.get('duration', 2.0)
+            steps = data.get('steps', 50)
         
         colored_logger.info(f"执行测试：鼠标移动后画圆，半径={radius}, 持续时间={duration}秒", category="API")
         
