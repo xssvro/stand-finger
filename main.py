@@ -146,6 +146,10 @@ def move_mouse():
             screen_width = data.get('screen_width')
             screen_height = data.get('screen_height')
 
+        # 保存原始坐标用于日志（在归一化之前）
+        original_x = x
+        original_y = y
+
         if absolute and screen_width and screen_height and screen_width > 0 and screen_height > 0:
             # 像素坐标转逻辑坐标 0-32767
             x = int(x * 32767 / screen_width)
@@ -154,7 +158,7 @@ def move_mouse():
             y = max(0, min(32767, y))
 
         colored_logger.info(
-            f"移动鼠标: ({data['x']}, {data['y']})"
+            f"移动鼠标: ({original_x}, {original_y})"
             + (" [绝对]" if absolute else f"，持续时间: {duration}秒"),
             category="MOUSE"
         )
