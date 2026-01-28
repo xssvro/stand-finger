@@ -296,50 +296,79 @@ curl -X POST http://192.168.1.100:5000/api/test \
 
 **移动鼠标**（默认相对移动，x/y 为移动量）：
 ```bash
+# POST 方式
 curl -X POST http://192.168.1.100:5000/api/mouse/move \
   -H "Content-Type: application/json" \
   -d '{"x": 100, "y": 200}'
+
+# GET 方式（Windows PowerShell 推荐）
+curl.exe http://192.168.1.100:5000/api/mouse/move?x=100&y=200
 ```
 
 **绝对移动**（将光标移动到指定坐标，需运行本项目的 `usb-gadget.sh` 以启用 `/dev/hidg2`）：
 - 按像素坐标（需传入目标屏幕分辨率）：
 ```bash
+# POST 方式
 curl -X POST http://192.168.1.100:5000/api/mouse/move \
   -H "Content-Type: application/json" \
   -d '{"x": 960, "y": 540, "absolute": true, "screen_width": 1920, "screen_height": 1080}'
+
+# GET 方式（Windows PowerShell 推荐，2K 屏幕中心示例）
+curl.exe "http://192.168.1.100:5000/api/mouse/move?x=1280&y=720&absolute=true&screen_width=2560&screen_height=1440"
 ```
 - 按逻辑坐标 0–32767（客户端自行归一化）：
 ```bash
+# POST 方式
 curl -X POST http://192.168.1.100:5000/api/mouse/move \
   -H "Content-Type: application/json" \
   -d '{"x": 16384, "y": 16384, "absolute": true}'
+
+# GET 方式
+curl.exe "http://192.168.1.100:5000/api/mouse/move?x=16384&y=16384&absolute=true"
 ```
 
 **鼠标移动到屏幕中心**（相对移动经验值，适合常见 1080p）：
 ```bash
+# POST 方式
 curl -X POST http://192.168.1.100:5000/api/mouse/move -H "Content-Type: application/json" -d '{"x": 500, "y": 500}' && \
 curl -X POST http://192.168.1.100:5000/api/mouse/move -H "Content-Type: application/json" -d '{"x": -250, "y": -250}'
+
+# GET 方式（Windows PowerShell）
+curl.exe "http://192.168.1.100:5000/api/mouse/move?x=500&y=500"
+curl.exe "http://192.168.1.100:5000/api/mouse/move?x=-250&y=-250"
 ```
 
 **点击鼠标**：
 ```bash
+# POST 方式
 curl -X POST http://192.168.1.100:5000/api/mouse/click \
   -H "Content-Type: application/json" \
   -d '{"button": "left", "count": 1}'
+
+# GET 方式（Windows PowerShell 推荐）
+curl.exe "http://192.168.1.100:5000/api/mouse/click?button=left&count=1"
 ```
 
 **输入文本**：
 ```bash
+# POST 方式
 curl -X POST http://192.168.1.100:5000/api/keyboard/type \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello World"}'
+
+# GET 方式（Windows PowerShell，注意 URL 编码）
+curl.exe "http://192.168.1.100:5000/api/keyboard/type?text=Hello%20World"
 ```
 
 **按下按键**：
 ```bash
+# POST 方式
 curl -X POST http://192.168.1.100:5000/api/keyboard/press \
   -H "Content-Type: application/json" \
   -d '{"key": "enter"}'
+
+# GET 方式（Windows PowerShell 推荐）
+curl.exe "http://192.168.1.100:5000/api/keyboard/press?key=enter"
 ```
 
 ### 画圆速度与参数说明
@@ -357,12 +386,20 @@ curl -X POST http://192.168.1.100:5000/api/keyboard/press \
 
 ### 完整API列表
 
+**所有接口都支持 GET 和 POST 两种方式**，方便在 Windows PowerShell 等环境中使用。
+
 - `GET /health` - 健康检查
 - `GET/POST /api/test` - 测试画圆（支持 ?radius=100&duration=2&steps=50）
-- `POST /api/mouse/move` - 移动鼠标（相对移动；`absolute: true` 时为绝对移动，需 /dev/hidg2）
-- `POST /api/mouse/click` - 点击鼠标
-- `POST /api/keyboard/type` - 输入文本
-- `POST /api/keyboard/press` - 按下按键
+- `GET/POST /api/mouse/move` - 移动鼠标（相对移动；`absolute=true` 时为绝对移动，需 /dev/hidg2）
+- `GET/POST /api/mouse/click` - 点击鼠标
+- `GET/POST /api/keyboard/type` - 输入文本
+- `GET/POST /api/keyboard/press` - 按下按键
+
+**Windows PowerShell 使用提示**：
+- 使用 `curl.exe` 而不是 `curl`（避免 PowerShell 别名问题）
+- GET 请求参数直接在 URL 中，用 `&` 连接多个参数
+- 文本参数中的空格需要 URL 编码为 `%20`
+- 布尔值 `absolute` 可以用 `true`、`1`、`yes`、`on`（不区分大小写）
 
 ## 故障排除
 

@@ -98,35 +98,53 @@ def test_draw_circle():
         }), 500
 
 
-@app.route('/api/mouse/move', methods=['POST'])
+@app.route('/api/mouse/move', methods=['GET', 'POST'])
 def move_mouse():
     """移动鼠标
     
-    请求体:
-    {
-        "x": 100,            # X：相对模式为移动量，绝对模式为逻辑坐标 0-32767 或像素（配合 screen_width/height）
-        "y": 200,             # Y：同上
-        "duration": 0.5,      # 相对移动持续时间（秒），可选
-        "absolute": false,    # 若 true 则按绝对坐标移动（需 /dev/hidg2）
-        "screen_width": 1920, # 可选，与 screen_height 一起传入时，x/y 视为像素并自动归一化到 0-32767
-        "screen_height": 1080
-    }
+    支持 GET 和 POST。
+    GET: ?x=100&y=200&duration=0.5&absolute=false&screen_width=1920&screen_height=1080
+    POST: 请求体 {"x": 100, "y": 200, "duration": 0.5, "absolute": false, "screen_width": 1920, "screen_height": 1080}
+    
+    参数:
+        x: X坐标（相对模式为移动量，绝对模式为逻辑坐标 0-32767 或像素）
+        y: Y坐标（同上）
+        duration: 相对移动持续时间（秒），可选
+        absolute: 若 true 则按绝对坐标移动（需 /dev/hidg2）
+        screen_width: 可选，与 screen_height 一起传入时，x/y 视为像素并自动归一化到 0-32767
+        screen_height: 可选
     """
     try:
-        data = request.get_json()
-        if not data or 'x' not in data or 'y' not in data:
-            colored_logger.warning("移动鼠标请求缺少参数", category="API")
-            return jsonify({
-                'status': 'error',
-                'message': '缺少必要参数: x, y'
-            }), 400
-
-        x = int(data['x'])
-        y = int(data['y'])
-        duration = data.get('duration', 0.1)
-        absolute = data.get('absolute', False)
-        screen_width = data.get('screen_width')
-        screen_height = data.get('screen_height')
+        if request.method == 'GET':
+            x_str = request.args.get('x')
+            y_str = request.args.get('y')
+            if not x_str or not y_str:
+                colored_logger.warning("移动鼠标请求缺少参数", category="API")
+                return jsonify({
+                    'status': 'error',
+                    'message': '缺少必要参数: x, y'
+                }), 400
+            x = int(x_str)
+            y = int(y_str)
+            duration = float(request.args.get('duration', 0.1))
+            absolute_str = request.args.get('absolute', 'false').lower()
+            absolute = absolute_str in ('true', '1', 'yes', 'on')
+            screen_width = request.args.get('screen_width', type=int)
+            screen_height = request.args.get('screen_height', type=int)
+        else:
+            data = request.get_json() or {}
+            if 'x' not in data or 'y' not in data:
+                colored_logger.warning("移动鼠标请求缺少参数", category="API")
+                return jsonify({
+                    'status': 'error',
+                    'message': '缺少必要参数: x, y'
+                }), 400
+            x = int(data['x'])
+            y = int(data['y'])
+            duration = data.get('duration', 0.1)
+            absolute = data.get('absolute', False)
+            screen_width = data.get('screen_width')
+            screen_height = data.get('screen_height')
 
         if absolute and screen_width and screen_height and screen_width > 0 and screen_height > 0:
             # 像素坐标转逻辑坐标 0-32767
@@ -164,20 +182,26 @@ def move_mouse():
         }), 500
 
 
-@app.route('/api/mouse/click', methods=['POST'])
+@app.route('/api/mouse/click', methods=['GET', 'POST'])
 def click_mouse():
     """点击鼠标
     
-    请求体:
-    {
-        "button": "left",   # 按钮类型: left, right, middle
-        "count": 1          # 点击次数，可选
-    }
+    支持 GET 和 POST。
+    GET: ?button=left&count=1
+    POST: 请求体 {"button": "left", "count": 1}
+    
+    参数:
+        button: 按钮类型 (left, right, middle)，默认 left
+        count: 点击次数，默认 1
     """
     try:
-        data = request.get_json() or {}
-        button = data.get('button', 'left')
-        count = data.get('count', 1)
+        if request.method == 'GET':
+            button = request.args.get('button', 'left')
+            count = int(request.args.get('count', 1))
+        else:
+            data = request.get_json() or {}
+            button = data.get('button', 'left')
+            count = data.get('count', 1)
         
         colored_logger.info(f"点击鼠标: {button} 按钮，{count} 次", category="MOUSE")
         mouse_controller.click(button, count)
@@ -196,27 +220,38 @@ def click_mouse():
         }), 500
 
 
-@app.route('/api/keyboard/type', methods=['POST'])
+@app.route('/api/keyboard/type', methods=['GET', 'POST'])
 def type_text():
     """输入文本
     
-    请求体:
-    {
-        "text": "Hello World",  # 要输入的文本
-        "interval": 0.05         # 字符间隔（秒），可选
-    }
+    支持 GET 和 POST。
+    GET: ?text=Hello%20World&interval=0.05
+    POST: 请求体 {"text": "Hello World", "interval": 0.05}
+    
+    参数:
+        text: 要输入的文本（必需）
+        interval: 字符间隔（秒），默认 0.05
     """
     try:
-        data = request.get_json()
-        if not data or 'text' not in data:
-            colored_logger.warning("输入文本请求缺少参数", category="API")
-            return jsonify({
-                'status': 'error',
-                'message': '缺少必要参数: text'
-            }), 400
-        
-        text = data['text']
-        interval = data.get('interval', 0.05)
+        if request.method == 'GET':
+            text = request.args.get('text')
+            if not text:
+                colored_logger.warning("输入文本请求缺少参数", category="API")
+                return jsonify({
+                    'status': 'error',
+                    'message': '缺少必要参数: text'
+                }), 400
+            interval = float(request.args.get('interval', 0.05))
+        else:
+            data = request.get_json() or {}
+            if 'text' not in data:
+                colored_logger.warning("输入文本请求缺少参数", category="API")
+                return jsonify({
+                    'status': 'error',
+                    'message': '缺少必要参数: text'
+                }), 400
+            text = data['text']
+            interval = data.get('interval', 0.05)
         
         colored_logger.info(f"输入文本: {text[:50]}{'...' if len(text) > 50 else ''}", category="KEYBOARD")
         keyboard_controller.type(text, interval)
@@ -235,25 +270,35 @@ def type_text():
         }), 500
 
 
-@app.route('/api/keyboard/press', methods=['POST'])
+@app.route('/api/keyboard/press', methods=['GET', 'POST'])
 def press_key():
     """按下按键
     
-    请求体:
-    {
-        "key": "enter"  # 按键名称
-    }
+    支持 GET 和 POST。
+    GET: ?key=enter
+    POST: 请求体 {"key": "enter"}
+    
+    参数:
+        key: 按键名称（必需）
     """
     try:
-        data = request.get_json()
-        if not data or 'key' not in data:
-            colored_logger.warning("按下按键请求缺少参数", category="API")
-            return jsonify({
-                'status': 'error',
-                'message': '缺少必要参数: key'
-            }), 400
-        
-        key = data['key']
+        if request.method == 'GET':
+            key = request.args.get('key')
+            if not key:
+                colored_logger.warning("按下按键请求缺少参数", category="API")
+                return jsonify({
+                    'status': 'error',
+                    'message': '缺少必要参数: key'
+                }), 400
+        else:
+            data = request.get_json() or {}
+            if 'key' not in data:
+                colored_logger.warning("按下按键请求缺少参数", category="API")
+                return jsonify({
+                    'status': 'error',
+                    'message': '缺少必要参数: key'
+                }), 400
+            key = data['key']
         colored_logger.info(f"按下按键: {key}", category="KEYBOARD")
         keyboard_controller.tap(key)
         colored_logger.success(f"已按下按键: {key}", category="KEYBOARD")
@@ -276,11 +321,11 @@ if __name__ == '__main__':
     colored_logger.success("服务启动中...", category="SYSTEM")
     colored_logger.info("服务地址: http://0.0.0.0:5000", category="NETWORK")
     colored_logger.info("API接口列表:", category="API")
-    colored_logger.info("  POST /api/test - 测试服务：鼠标移动后画圆", category="API")
-    colored_logger.info("  POST /api/mouse/move - 移动鼠标", category="API")
-    colored_logger.info("  POST /api/mouse/click - 点击鼠标", category="API")
-    colored_logger.info("  POST /api/keyboard/type - 输入文本", category="API")
-    colored_logger.info("  POST /api/keyboard/press - 按下按键", category="API")
+    colored_logger.info("  GET/POST /api/test - 测试服务：鼠标移动后画圆", category="API")
+    colored_logger.info("  GET/POST /api/mouse/move - 移动鼠标", category="API")
+    colored_logger.info("  GET/POST /api/mouse/click - 点击鼠标", category="API")
+    colored_logger.info("  GET/POST /api/keyboard/type - 输入文本", category="API")
+    colored_logger.info("  GET/POST /api/keyboard/press - 按下按键", category="API")
     log_path = colored_logger.get_log_path()
     if log_path:
         colored_logger.info(f"日志文件: {log_path}", category="SYSTEM")
