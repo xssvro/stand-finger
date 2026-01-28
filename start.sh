@@ -65,6 +65,8 @@ print_success "依赖安装完成"
 if [ "$EUID" -ne 0 ]; then 
     print_error "必须使用root权限运行（sudo）"
     echo -e "${YELLOW}请使用: ${BOLD}sudo ./start.sh${NC}"
+    echo ""
+    echo -e "${YELLOW}原因: 访问 /dev/hidg* 设备需要root权限${NC}"
     exit 1
 fi
 print_success "权限检查通过（root）"
@@ -78,8 +80,9 @@ else
     print_success "USB HID设备已就绪"
 fi
 
-# 启动服务
+# 启动服务（使用虚拟环境中的 Python，确保使用已安装的依赖）
 echo ""
 print_success "启动服务..."
 echo ""
-python3 main.py
+# 使用虚拟环境的 Python 完整路径，避免 sudo 时使用系统 Python
+"$(pwd)/venv/bin/python3" main.py

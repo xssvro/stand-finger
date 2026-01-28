@@ -4,6 +4,10 @@
 
 树莓派通过USB连接到目标电脑，作为USB HID设备（键盘+鼠标），接收网络命令后通过USB HID协议控制目标电脑。
 
+**支持的树莓派型号**：
+- ✅ 树莓派Zero/Zero W（推荐，只有一个USB口）
+- ✅ 树莓派4（使用USB-A口，不是Type-C口）
+
 ## 一、设置树莓派
 
 ### 1. 编辑配置文件
@@ -130,33 +134,49 @@ sudo /usr/local/bin/usb-gadget.sh
 
 ### 4. 验证配置
 
+**方式1：使用检查脚本（推荐）**
+
 ```bash
-# 检查设备文件（在树莓派上）
+# 运行连接检查脚本
+./check_usb_connection.sh
+```
+
+**方式2：手动检查（在树莓派上）**
+
+```bash
+# 检查设备文件
 find /dev -name "hidg*"
 # 或
 [ -e /dev/hidg0 ] && echo "✓ 键盘设备存在" || echo "✗ 未找到键盘设备"
 [ -e /dev/hidg1 ] && echo "✓ 鼠标设备存在" || echo "✗ 未找到鼠标设备"
+
+# 检查USB Gadget状态
+cat /sys/kernel/config/usb_gadget/pi4/UDC
+# 如果有输出，说明已启用
+
+# 查看USB连接事件
+dmesg | tail -20 | grep -i "usb\|gadget"
 ```
 
 应该看到 `/dev/hidg0` 和 `/dev/hidg1`。
 
 ## 二、连接设备到电脑
 
-### ⚠️ 重要：树莓派Zero的USB接口
+### ⚠️ 重要：树莓派的USB接口
 
-树莓派Zero有两个Micro USB接口：
+**树莓派Zero**：
+- 有两个Micro USB接口
+- **USB数据口**（靠近HDMI）→ ✅ 用于USB Gadget
+- **电源接口**（靠近SD卡）→ ❌ 只能供电
 
-1. **USB数据口**（靠近HDMI接口）
-   - ✅ **必须使用这个接口**
-   - 用于USB数据传输
-   - 连接到目标电脑的USB口
-
-2. **电源接口**（靠近SD卡槽）
-   - ❌ **不能使用**
-   - 只能供电，不能传输数据
+**树莓派4**：
+- **USB Type-C口** → ❌ **只能供电，不能用于USB Gadget**
+- **USB-A口**（USB 2.0或USB 3.0）→ ✅ **必须使用这些接口**
+- 树莓派4有多个USB-A口，选择任意一个连接到电脑
 
 ### 连接步骤
 
+**树莓派Zero**：
 ```
 树莓派Zero                   目标电脑
 ┌─────────────┐              ┌─────────────┐
@@ -166,22 +186,56 @@ find /dev -name "hidg*"
 └─────────────┘              └─────────────┘
 ```
 
-1. 使用**USB数据线**（不是充电线）
-2. 连接到树莓派的**USB数据口**（靠近HDMI）
+**树莓派4**：
+```
+树莓派4                      目标电脑
+┌─────────────┐              ┌─────────────┐
+│             │              │             │
+│  USB-A口    │ ───数据线───> │   USB口     │
+│  (任意一个) │              │             │
+│             │              │             │
+│  Type-C     │ ───电源线───> │  (仅供电)   │
+│  (仅供电)   │              │             │
+└─────────────┘              └─────────────┘
+```
+
+**连接步骤**：
+1. **树莓派Zero**：使用USB数据线连接到USB数据口（靠近HDMI）
+2. **树莓派4**：使用USB数据线连接到**USB-A口**（不是Type-C口）
 3. 另一端连接到目标电脑的USB口
-4. 树莓派会从电脑获取电源（通常不需要单独供电）
+4. **树莓派4需要单独供电**：Type-C口连接电源适配器
 
 ### 验证连接
 
-在**目标电脑**上验证：
+**在树莓派上检查**：
+
+```bash
+# 运行检查脚本
+./check_usb_connection.sh
+
+# 或手动检查
+cat /sys/kernel/config/usb_gadget/pi4/UDC
+# 如果有输出（如：20980000.usb），说明已连接
+```
+
+**在目标电脑上验证**：
 
 **Linux**：
 ```bash
-lsusb | grep -i "raspberry\|hid"
+# 查看USB设备
+lsusb | grep -i "raspberry\|hid\|1d6b"
+
+# 查看输入设备
+ls /dev/input/by-id/ | grep -i "keyboard\|mouse"
 ```
 
 **Windows**：
 - 打开"设备管理器"
+- 展开"键盘"和"鼠标和其他指针设备"
+- 应该看到"Raspberry Pi USB HID Keyboard Mouse"
+
+**macOS**：
+- 打开"系统信息" → "USB"
 - 应该看到"Raspberry Pi USB HID Keyboard Mouse"
 
 ## 三、服务使用
@@ -196,15 +250,20 @@ pip install -r requirements.txt
 
 ### 启动服务
 
-**⚠️ 必须使用root权限运行**：
+**⚠️ 必须使用root权限运行**（访问 `/dev/hidg*` 需要root权限）。
+
+**依赖安装在虚拟环境(venv)中**，所以要用虚拟环境里的 Python 来跑：
 
 ```bash
 # 方式1：使用启动脚本（推荐）
+# 会激活 venv、安装依赖，并用 venv 里的 Python 启动
 sudo ./start.sh
 
-# 方式2：直接运行
-sudo python3 main.py
+# 方式2：直接运行（使用虚拟环境中的 Python）
+sudo ./venv/bin/python3 main.py
 ```
+
+**不要用** `sudo python3 main.py`，那样会走系统 Python，找不到 venv 里装的依赖。
 
 服务默认运行在 `http://0.0.0.0:5000`
 
@@ -292,17 +351,66 @@ sudo /usr/local/bin/usb-gadget.sh
 
 ### 问题2：目标电脑无法识别设备
 
-1. 检查是否使用了数据线（不是充电线）
-2. 检查是否连接到USB数据口（不是电源接口）
-3. 重新插拔USB连接
-4. 检查配置脚本是否成功运行
+**运行脚本后不需要重启树莓派**，USB Gadget会立即生效。
+
+**排查步骤**：
+
+1. **在树莓派上检查配置是否成功**：
+   ```bash
+   # 检查设备文件
+   find /dev -name "hidg*"
+   
+   # 检查UDC是否启用
+   cat /sys/kernel/config/usb_gadget/pi4/UDC
+   # 应该有输出（如：20980000.usb），如果是空的说明未启用
+   ```
+
+2. **检查USB连接**：
+   - ✅ 使用**数据线**（不是充电线）
+   - ✅ 连接到**USB数据口**（靠近HDMI，不是电源接口）
+   - ✅ 连接到目标电脑的USB口
+
+3. **重新插拔USB连接**（重要）：
+   - 断开树莓派与电脑的USB连接
+   - 等待3-5秒
+   - 重新连接
+   - Windows会自动检测新设备
+
+4. **如果UDC为空，重新运行脚本**：
+   ```bash
+   sudo ./usb-gadget.sh
+   ```
+
+5. **在Windows上刷新设备管理器**：
+   - 在设备管理器中点击"操作" → "扫描检测硬件改动"
+   - 或按F5刷新
+
+6. **检查Windows设备管理器中的其他位置**：
+   - "通用串行总线控制器"下可能有未知设备
+   - "人体学输入设备"下可能有HID设备
+   - 如果有黄色感叹号，可能需要安装驱动（通常不需要）
 
 ### 问题3：权限被拒绝
 
-确保使用root权限运行服务：
+**错误信息**：`Permission denied: '/dev/hidg0'` 或 `Permission denied: '/dev/hidg1'`
+
+**解决方案**：必须使用root权限运行服务：
 ```bash
 sudo python3 main.py
+# 或
+sudo ./start.sh
 ```
+
+### 问题4：树莓派4连接问题
+
+**问题**：树莓派4使用USB Type-C连接，但设备无法识别
+
+**原因**：树莓派4的USB Type-C口只能供电，不能传输数据
+
+**解决方案**：
+1. 使用**USB-A口**（USB 2.0或USB 3.0）连接到电脑
+2. Type-C口用于单独供电（连接电源适配器）
+3. 树莓派4有多个USB-A口，选择任意一个即可
 
 ## 注意事项
 
