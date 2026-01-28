@@ -1,77 +1,131 @@
 """
-鼠标控制模块
-用于模拟鼠标操作
+鼠标控制模块 - USB HID协议
+通过USB HID设备文件发送鼠标事件到被插入的电脑
 """
-import math
+import struct
 import time
 from typing import Tuple, Optional
-try:
-    from pynput.mouse import Controller, Button
-    PYNPUT_AVAILABLE = True
-except ImportError:
-    PYNPUT_AVAILABLE = False
-    print("警告: pynput未安装，鼠标控制功能将不可用")
-
-try:
-    import pyautogui
-    PYAUTOGUI_AVAILABLE = True
-except ImportError:
-    PYAUTOGUI_AVAILABLE = False
-    print("警告: pyautogui未安装，将使用默认屏幕尺寸")
+import os
+from logger import logger
 
 
 class MouseController:
-    """鼠标控制器"""
+    """USB HID鼠标控制器"""
     
-    def __init__(self):
-        """初始化鼠标控制器"""
-        if PYNPUT_AVAILABLE:
-            self.mouse = Controller()
-        else:
-            self.mouse = None
-            print("警告: 鼠标控制器初始化失败")
+    # USB HID鼠标设备文件路径
+    # 通常 /dev/hidg0 是键盘，/dev/hidg1 是鼠标
+    # 如果只有一个HID设备，可能是 /dev/hidg0
+    MOUSE_DEVICE_PATHS = ['/dev/hidg1', '/dev/hidg0']
     
-    def get_position(self) -> Tuple[int, int]:
-        """获取当前鼠标位置"""
-        if self.mouse:
-            return self.mouse.position
-        return (0, 0)
-    
-    def move_to(self, x: int, y: int, duration: float = 0.1):
-        """移动鼠标到指定位置
+    def __init__(self, device_path: Optional[str] = None):
+        """初始化鼠标控制器
         
         Args:
-            x: 目标X坐标
-            y: 目标Y坐标
-            duration: 移动持续时间（秒）
+            device_path: USB HID鼠标设备文件路径，如果为None则自动检测
         """
-        if not self.mouse:
+        self.device_path = device_path
+        self.device_file = None
+        self._open_device()
+    
+    def _open_device(self):
+        """打开USB HID设备文件"""
+        if self.device_path:
+            paths_to_try = [self.device_path]
+        else:
+            paths_to_try = self.MOUSE_DEVICE_PATHS
+        
+        for path in paths_to_try:
+            try:
+                if os.path.exists(path):
+                    self.device_file = open(path, 'wb')
+                    self.device_path = path
+                    logger.success(f"成功打开鼠标设备: {path}", category="MOUSE")
+                    return
+            except (PermissionError, IOError) as e:
+                logger.warning(f"无法打开 {path}: {e}", category="MOUSE")
+                continue
+        
+        raise RuntimeError(
+            f"无法找到可用的USB HID鼠标设备。请确保：\n"
+            f"1. 树莓派已配置为USB Gadget模式\n"
+            f"2. 已加载libcomposite模块\n"
+            f"3. 已创建HID功能\n"
+            f"4. 使用root权限运行程序"
+        )
+    
+    def _write_mouse_report(self, buttons: int = 0, x: int = 0, y: int = 0, wheel: int = 0):
+        """写入鼠标HID报告
+        
+        USB HID鼠标报告格式（5字节）:
+        Byte 0: 按钮状态 (bit 0=左键, bit 1=右键, bit 2=中键)
+        Byte 1: X轴移动 (-127 到 127)
+        Byte 2: Y轴移动 (-127 到 127)
+        Byte 3: 滚轮 (-127 到 127)
+        Byte 4: 保留（通常为0）
+        
+        Args:
+            buttons: 按钮状态位掩码
+            x: X轴相对移动量（-127到127）
+            y: Y轴相对移动量（-127到127）
+            wheel: 滚轮移动量（-127到127）
+        """
+        if not self.device_file:
             return
         
-        current_pos = self.mouse.position
-        steps = max(10, int(duration * 100))  # 至少10步
+        # 限制移动范围
+        x = max(-127, min(127, x))
+        y = max(-127, min(127, y))
+        wheel = max(-127, min(127, wheel))
         
-        for i in range(steps + 1):
-            t = i / steps
-            # 使用缓动函数使移动更平滑
-            ease_t = t * t * (3 - 2 * t)  # smoothstep
-            new_x = int(current_pos[0] + (x - current_pos[0]) * ease_t)
-            new_y = int(current_pos[1] + (y - current_pos[1]) * ease_t)
-            self.mouse.position = (new_x, new_y)
-            time.sleep(duration / steps)
+        # 打包HID报告
+        report = struct.pack('bbbb', buttons, x, y, wheel)
+        
+        try:
+            self.device_file.write(report)
+            self.device_file.flush()
+        except IOError as e:
+            raise RuntimeError(f"写入鼠标设备失败: {e}")
     
     def move_relative(self, dx: int, dy: int):
         """相对移动鼠标
         
         Args:
-            dx: X方向移动距离
-            dy: Y方向移动距离
+            dx: X方向移动距离（像素）
+            dy: Y方向移动距离（像素）
         """
-        if not self.mouse:
-            return
+        # 如果移动距离超过127，需要分多次移动
+        while dx != 0 or dy != 0:
+            move_x = max(-127, min(127, dx))
+            move_y = max(-127, min(127, dy))
+            
+            self._write_mouse_report(x=move_x, y=move_y)
+            
+            dx -= move_x
+            dy -= move_y
+            
+            if dx != 0 or dy != 0:
+                time.sleep(0.01)  # 短暂延迟，避免移动过快
+    
+    def move_to(self, x: int, y: int, duration: float = 0.1):
+        """移动鼠标到指定位置（相对移动）
         
-        current_pos = self.mouse.position
-        self.mouse.position = (current_pos[0] + dx, current_pos[1] + dy)
+        注意：USB HID鼠标只能发送相对移动，无法获取绝对位置
+        此函数将目标坐标视为相对移动量
+        
+        Args:
+            x: 目标X坐标（作为相对移动量）
+            y: 目标Y坐标（作为相对移动量）
+            duration: 移动持续时间（秒）
+        """
+        # USB HID鼠标只能做相对移动
+        # 这里将x, y作为相对移动量处理
+        steps = max(1, int(duration * 100))
+        step_x = x / steps
+        step_y = y / steps
+        
+        for i in range(steps):
+            self.move_relative(int(step_x), int(step_y))
+            time.sleep(duration / steps)
     
     def click(self, button: str = 'left', count: int = 1):
         """点击鼠标
@@ -80,78 +134,60 @@ class MouseController:
             button: 按钮类型 ('left', 'right', 'middle')
             count: 点击次数
         """
-        if not self.mouse:
-            return
-        
         button_map = {
-            'left': Button.left,
-            'right': Button.right,
-            'middle': Button.middle
+            'left': 1,      # bit 0
+            'right': 2,     # bit 1
+            'middle': 4     # bit 2
         }
         
-        btn = button_map.get(button.lower(), Button.left)
+        button_mask = button_map.get(button.lower(), 1)
+        
         for _ in range(count):
-            self.mouse.click(btn)
+            # 按下
+            self._write_mouse_report(buttons=button_mask)
+            time.sleep(0.01)
+            # 释放
+            self._write_mouse_report(buttons=0)
             if count > 1:
                 time.sleep(0.1)
     
     def press(self, button: str = 'left'):
         """按下鼠标按钮"""
-        if not self.mouse:
-            return
-        
         button_map = {
-            'left': Button.left,
-            'right': Button.right,
-            'middle': Button.middle
+            'left': 1,
+            'right': 2,
+            'middle': 4
         }
-        
-        btn = button_map.get(button.lower(), Button.left)
-        self.mouse.press(btn)
+        button_mask = button_map.get(button.lower(), 1)
+        self._write_mouse_report(buttons=button_mask)
     
     def release(self, button: str = 'left'):
         """释放鼠标按钮"""
-        if not self.mouse:
-            return
-        
-        button_map = {
-            'left': Button.left,
-            'right': Button.right,
-            'middle': Button.middle
-        }
-        
-        btn = button_map.get(button.lower(), Button.left)
-        self.mouse.release(btn)
+        self._write_mouse_report(buttons=0)
     
     def scroll(self, dx: int, dy: int):
         """滚动鼠标滚轮
         
         Args:
             dx: 水平滚动距离
-            dy: 垂直滚动距离
+            dy: 垂直滚动距离（正数向上，负数向下）
         """
-        if not self.mouse:
-            return
-        
-        self.mouse.scroll(dx, dy)
+        self._write_mouse_report(wheel=dy)
+        time.sleep(0.01)
+        self._write_mouse_report(wheel=0)  # 停止滚动
     
     def center(self):
-        """将鼠标移动到屏幕中心"""
-        if not self.mouse:
-            return
+        """将鼠标移动到屏幕中心
         
-        # 获取屏幕尺寸
-        if PYAUTOGUI_AVAILABLE:
-            screen_width, screen_height = pyautogui.size()
-        else:
-            # 默认值，如果pyautogui不可用
-            screen_width = 1920
-            screen_height = 1080
-        
-        center_x = screen_width // 2
-        center_y = screen_height // 2
-        
-        self.move_to(center_x, center_y)
+        注意：USB HID鼠标无法获取绝对位置，此函数会执行一个较大的相对移动
+        实际效果取决于目标电脑的屏幕尺寸和当前鼠标位置
+        """
+        # 执行一个较大的相对移动（假设屏幕中心在当前位置的某个方向）
+        # 这里移动到一个假设的中心位置
+        # 实际使用时，可能需要根据目标屏幕尺寸调整
+        self.move_relative(500, 500)  # 向右下移动
+        time.sleep(0.1)
+        self.move_relative(-250, -250)  # 向左上移动，回到大致中心
     
     def draw_circle(self, center_x: Optional[int] = None, 
                     center_y: Optional[int] = None, 
@@ -160,34 +196,51 @@ class MouseController:
                     duration: float = 2.0):
         """画一个圆
         
+        注意：由于USB HID鼠标只能做相对移动，此函数以当前位置为圆心画圆
+        
         Args:
-            center_x: 圆心X坐标，如果为None则使用当前鼠标位置
-            center_y: 圆心Y坐标，如果为None则使用当前鼠标位置
+            center_x: 忽略（USB HID鼠标无法获取绝对位置）
+            center_y: 忽略（USB HID鼠标无法获取绝对位置）
             radius: 圆的半径（像素）
             steps: 画圆的步数（越多越平滑）
             duration: 画圆的总时间（秒）
         """
-        if not self.mouse:
-            return
+        import math
         
-        if center_x is None or center_y is None:
-            current_pos = self.mouse.position
-            center_x = center_x or current_pos[0]
-            center_y = center_y or current_pos[1]
-        
-        # 移动到起始点（圆的最右侧）
-        start_x = center_x + radius
-        start_y = center_y
-        self.move_to(start_x, start_y, duration=0.2)
-        
-        # 画圆
         step_duration = duration / steps
+        
         for i in range(steps + 1):
             angle = 2 * math.pi * i / steps
-            x = int(center_x + radius * math.cos(angle))
-            y = int(center_y + radius * math.sin(angle))
-            self.mouse.position = (x, y)
+            # 计算每一步的相对移动
+            if i == 0:
+                # 第一步：移动到起始位置（圆的最右侧）
+                dx = int(radius * math.cos(angle))
+                dy = int(radius * math.sin(angle))
+            else:
+                # 后续步骤：计算相对于上一步的移动
+                prev_angle = 2 * math.pi * (i - 1) / steps
+                prev_x = radius * math.cos(prev_angle)
+                prev_y = radius * math.sin(prev_angle)
+                curr_x = radius * math.cos(angle)
+                curr_y = radius * math.sin(angle)
+                dx = int(curr_x - prev_x)
+                dy = int(curr_y - prev_y)
+            
+            self.move_relative(dx, dy)
             time.sleep(step_duration)
+    
+    def get_position(self) -> Tuple[int, int]:
+        """获取当前鼠标位置
         
-        # 回到起始点
-        self.move_to(start_x, start_y, duration=0.1)
+        注意：USB HID鼠标无法获取绝对位置，此函数返回(0, 0)作为占位符
+        """
+        # USB HID鼠标协议不支持读取位置
+        return (0, 0)
+    
+    def __del__(self):
+        """清理资源"""
+        if self.device_file:
+            try:
+                self.device_file.close()
+            except:
+                pass
