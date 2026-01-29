@@ -384,9 +384,59 @@ curl.exe "http://192.168.1.100:5000/api/keyboard/press?key=enter"
 “居中”是经验值（先向右下移 500,500，再向左上移 250,250），适合常见 1080p。其他分辨率可在代码里改 `DEFAULT_CENTER_OFFSET` / `DEFAULT_CENTER_BACK`，或通过 API 传 `center_move`、`center_back`（若后续接口支持）。  
 **绝对移动**时需运行本项目的 `usb-gadget.sh`（会创建 `/dev/hidg2`），可将光标移动到指定坐标；可传 `screen_width`、`screen_height` 用像素坐标，或直接传 0–32767 的逻辑坐标。
 
+### WebSocket 接口（高效双向通信）
+
+**端点**：`ws://<树莓派IP>:5000/ws`
+
+连接后发送 JSON 消息，服务端会回复执行结果。适合需要连续发送多条指令、低延迟的场景。
+
+**消息格式**：`{"action": "<动作名>", ...参数}`
+
+| action | 说明 | 参数示例 |
+|--------|------|----------|
+| `mouse_move` | 移动鼠标 | `x`, `y`, `duration`, `absolute`, `screen_width`, `screen_height` |
+| `mouse_click` | 点击鼠标 | `button`, `count` |
+| `keyboard_type` | 输入文本 | `text`, `interval` |
+| `keyboard_press` | 按下按键 | `key` |
+| `test` | 画圆测试 | `radius`, `duration`, `steps`, `center_move`, `center_back` |
+
+**示例（浏览器控制台或 Node.js）**：
+
+```javascript
+const ws = new WebSocket('ws://192.168.1.100:5000/ws');
+ws.onopen = () => {
+  // 绝对移动到 2K 屏幕中心
+  ws.send(JSON.stringify({
+    action: 'mouse_move',
+    x: 1280, y: 720,
+    absolute: true,
+    screen_width: 2560,
+    screen_height: 1440
+  }));
+  // 输入网址
+  ws.send(JSON.stringify({ action: 'keyboard_type', text: 'www.baidu.com' }));
+  ws.send(JSON.stringify({ action: 'keyboard_press', key: 'enter' }));
+};
+ws.onmessage = (e) => console.log(JSON.parse(e.data));
+```
+
+**Python 客户端示例**：
+
+```python
+import json
+import websocket  # pip install websocket-client
+
+ws = websocket.create_connection("ws://192.168.1.100:5000/ws")
+ws.send(json.dumps({"action": "mouse_move", "x": 1280, "y": 720, "absolute": True, "screen_width": 2560, "screen_height": 1440}))
+print(ws.recv())
+ws.send(json.dumps({"action": "keyboard_type", "text": "www.baidu.com"}))
+print(ws.recv())
+ws.close()
+```
+
 ### 完整API列表
 
-**所有接口都支持 GET 和 POST 两种方式**，方便在 Windows PowerShell 等环境中使用。
+**HTTP**：所有接口都支持 GET 和 POST 两种方式，方便在 Windows PowerShell 等环境中使用。
 
 - `GET /health` - 健康检查
 - `GET/POST /api/test` - 测试画圆（支持 ?radius=100&duration=2&steps=50）
@@ -394,6 +444,10 @@ curl.exe "http://192.168.1.100:5000/api/keyboard/press?key=enter"
 - `GET/POST /api/mouse/click` - 点击鼠标
 - `GET/POST /api/keyboard/type` - 输入文本
 - `GET/POST /api/keyboard/press` - 按下按键
+
+**WebSocket**：
+
+- `ws://<host>:5000/ws` - 双向通信，发送 `{"action": "mouse_move", ...}` 等 JSON 消息
 
 **Windows PowerShell 使用提示**：
 - 使用 `curl.exe` 而不是 `curl`（避免 PowerShell 别名问题）
